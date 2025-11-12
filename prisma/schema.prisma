@@ -1,0 +1,348 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// TRUNCATE TABLE "Currencies" RESTART IDENTITY
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = []
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("POSTGRESQL_DB_URL")
+  relationMode = "foreignKeys"
+}
+
+model User {
+  userId    Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  email      String  @unique
+  telegramId String?
+  password   String /// @encrypted
+  secret     String? /// @encrypted
+}
+
+model Deal {
+  dealId    Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  bot   String
+  code  String
+  stock Stock  @relation(fields: [code], references: [codeTS])
+
+  hash        String   @unique
+  dealDate    DateTime
+  timeLn      Int
+  timeSh      Int
+  dateLn      Int
+  dateSh      Int
+  size        Int
+  currentSize Int
+  direction   Int
+  enter       Float
+  stop        Float
+  pnlpos      Float
+  riskpos     Float
+  isOpen      Boolean
+
+  @@index([hash])
+  @@index([bot])
+  @@index([code])
+  @@index([isOpen])
+}
+
+model DealLog {
+  dealLogId Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  bot  String
+  code String
+
+  hash      String
+  dealDate  DateTime
+  timeLn    Int
+  timeSh    Int
+  dateLn    Int
+  dateSh    Int
+  size      Int
+  direction Int
+  enter     Float
+  stop      Float
+  pnlpos    Float
+  riskpos   Float
+
+  @@index([hash])
+  @@index([bot])
+  @@index([code])
+}
+
+model Strategy {
+  strategyId Int      @id @default(autoincrement())
+  createdAt  DateTime @default(now()) @db.Timestamptz()
+  updatedAt  DateTime @updatedAt @db.Timestamptz()
+
+  name     String
+  code     String   @unique
+  exchange Exchange @default(crypto)
+
+  stocks Stock[]
+  tokens Tokens[]
+}
+
+model Bot {
+  botId     Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  name     String
+  code     String   @unique
+  exchange Exchange @default(crypto)
+}
+
+model Stock {
+  stockId   Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  code        String   @unique
+  codeTS      String   @unique
+  codeFut     String?
+  isAvailable Boolean
+  lvg         Float
+  lotPrec     Int
+  minLot      Float
+  exchange    Exchange @default(crypto)
+
+  deal       Deal[]
+  strategies Strategy[]
+}
+
+model Tokens {
+  tokenId   Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  token      String     @unique
+  dateTo     DateTime
+  strategies Strategy[]
+}
+
+enum Exchange {
+  moex
+  futures
+  crypto
+}
+
+model test {
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  email     String   @unique
+}
+
+model UserSimvai {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  name         String?
+  createdAt    DateTime      @default(now())
+  transactions Transaction[] @relation("UserTransactions")
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  userId    String
+  amount    Float
+  currency  String   @default("USD")
+  status    String // e.g., "paid", "pending", "failed"
+  promoCode String?
+  createdAt DateTime @default(now())
+
+  user UserSimvai @relation("UserTransactions", fields: [userId], references: [id])
+}
+
+model AdminUser {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+
+  promoCodes PromoCode[]
+}
+
+model PromoCode {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  discount  Int
+  forWho    String?
+  createdAt DateTime @default(now())
+
+  adminId String
+  admin   AdminUser @relation(fields: [adminId], references: [id])
+}
+
+model KrasavaUsers {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  googleId  String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchaseHistory PurchaseHistory[]
+  wishlist        Wishlist[]
+}
+
+model Player {
+  id          String    @id @default(uuid())
+  firstName   String
+  lastName    String?
+  number      Int?
+  position    Position?
+  birthDate   DateTime
+  nationality String?
+  height      Float?
+  info        String?
+  instagram   String?
+  imageUrl    String?
+  tmurl       String?
+  active      Boolean?  @default(true)
+}
+
+enum Position {
+  GOALKEEPER
+  DEFENDER
+  MIDFIELDER
+  FORWARD
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+
+  purchases    PurchaseHistory[]
+  wishlisted   Wishlist[]
+  transactions Transactions[]
+}
+
+model PurchaseHistory {
+  id              String       @id @default(uuid())
+  user            KrasavaUsers @relation(fields: [userId], references: [id])
+  userId          String
+  item            Product      @relation(fields: [itemId], references: [id])
+  itemId          String
+  quantity        Int          @default(1)
+  priceAtPurchase Float        @default(0)
+  status          String       @default("PAID")
+  createdAt       DateTime     @default(now())
+
+  transaction Transactions? @relation("PurchaseToTransaction")
+}
+
+model Transactions {
+  id              String          @id @default(uuid())
+  purchase        PurchaseHistory @relation("PurchaseToTransaction", fields: [purchaseId], references: [id])
+  purchaseId      String          @unique
+  product         Product         @relation(fields: [productId], references: [id])
+  productId       String
+  amount          Float
+  currency        String
+  status          String
+  transactionDate DateTime        @default(now())
+}
+
+model Wishlist {
+  id        String       @id @default(uuid())
+  user      KrasavaUsers @relation(fields: [userId], references: [id])
+  userId    String
+  product   Product      @relation(fields: [productId], references: [id])
+  productId String
+  addedAt   DateTime     @default(now())
+  quantity  Int          @default(1)
+}
+
+model CbcUser {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  password   String?
+  googleId   String?   @unique
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastOnline DateTime?
+
+  infoId String?      @unique
+  info   CbcUserInfo? @relation(fields: [infoId], references: [id])
+
+  settings CbcUserSetting?
+
+  events Event[] @relation("UserEvents")
+
+  followers CbcFollow[] @relation("FollowingRelation")
+  following CbcFollow[] @relation("FollowerRelation")
+}
+
+model CbcUserInfo {
+  id          String    @id @default(cuid())
+  user        CbcUser?  @relation
+  status      String    @default("Member")
+  bio         String?
+  photo       String?
+  dateOfBirth DateTime?
+  name        String?
+  location    String?
+  phoneNumber String?
+}
+
+model CbcUserSetting {
+  id          String  @id @default(cuid())
+  userId      String  @unique
+  user        CbcUser @relation(fields: [userId], references: [id])
+  isPrivate   Boolean @default(false)
+  emailSend   Boolean @default(false)
+  chatBotSend Boolean @default(false)
+}
+
+model Event {
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  date         DateTime
+  location     String
+  price        Float?
+  photo        String?
+  documentPath String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  categories EventCategory[] @relation("EventCategories")
+
+  organizerId String?
+  organizer   CbcUser? @relation("UserEvents", fields: [organizerId], references: [id])
+}
+
+model EventCategory {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  events Event[] @relation("EventCategories")
+}
+
+model CbcFollow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower CbcUser @relation("FollowerRelation", fields: [followerId], references: [id])
+
+  following CbcUser @relation("FollowingRelation", fields: [followingId], references: [id])
+
+  @@unique([followerId, followingId])
+}
