@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "PurchaseHistory" ADD COLUMN     "priceAtPurchase" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "quantity" INTEGER NOT NULL DEFAULT 1,
+ADD COLUMN     "status" TEXT NOT NULL DEFAULT 'PAID';
