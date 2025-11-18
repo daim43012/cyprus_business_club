@@ -279,20 +279,28 @@ model CbcUser {
   lastOnline DateTime?
 
   infoId String?      @unique
-  info   CbcUserInfo? @relation(fields: [infoId], references: [id])
+  info       CbcUserInfo?  @relation("UserInfoRelation", fields: [infoId], references: [id])
 
-  settings CbcUserSetting?
-
-  events Event[] @relation("UserEvents")
-
-  followers CbcFollow[] @relation("FollowingRelation")
-  following CbcFollow[] @relation("FollowerRelation")
+  settings  CbcUserSetting?
+  events    Event[]         @relation("UserEvents")
+  followers CbcFollow[]     @relation("FollowingRelation")
+  following CbcFollow[]     @relation("FollowerRelation")
+  messages         Message[]         @relation("UserMessages")
+  chatParticipants ChatParticipant[]
+  messageReads  MessageRead[]
+  registrations EventRegistration[]
+  notifications Notification[]      @relation("UserNotifications")
+  availability  Availability[]
+  meetingSlots MeetingSlot[] @relation("HostSlots")
+  hostMeetings Meeting[] @relation("MeetingHost")
+  clientMeetings Meeting[] @relation("MeetingClient")
 }
 
 model CbcUserInfo {
-  id          String    @id @default(cuid())
-  user        CbcUser?  @relation
-  status      String    @default("Member")
+  id          String     @id @default(cuid())
+  user        CbcUser?   @relation("UserInfoRelation")
+
+  status      String     @default("Member")
   bio         String?
   photo       String?
   dateOfBirth DateTime?
@@ -300,6 +308,7 @@ model CbcUserInfo {
   location    String?
   phoneNumber String?
 }
+
 
 model CbcUserSetting {
   id          String  @id @default(cuid())
@@ -319,13 +328,15 @@ model Event {
   price        Float?
   photo        String?
   documentPath String?
+  latitude     Float?
+  longitude    Float?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  categories EventCategory[] @relation("EventCategories")
-
-  organizerId String?
-  organizer   CbcUser? @relation("UserEvents", fields: [organizerId], references: [id])
+  categories    EventCategory[]     @relation("EventCategories")
+  organizerId   String?
+  organizer     CbcUser?            @relation("UserEvents", fields: [organizerId], references: [id])
+  registrations EventRegistration[]
 }
 
 model EventCategory {
@@ -345,4 +356,121 @@ model CbcFollow {
   following CbcUser @relation("FollowingRelation", fields: [followingId], references: [id])
 
   @@unique([followerId, followingId])
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ChatParticipant[]
+  messages     Message[]
+}
+
+model ChatParticipant {
+  id     String @id @default(cuid())
+  userId String
+  chatId String
+  role   String @default("member")
+
+  user CbcUser @relation(fields: [userId], references: [id])
+  chat Chat    @relation(fields: [chatId], references: [id])
+
+  @@unique([userId, chatId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String
+  senderId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  chat   Chat    @relation(fields: [chatId], references: [id])
+  sender CbcUser @relation("UserMessages", fields: [senderId], references: [id])
+
+  reads MessageRead[]
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id])
+  user    CbcUser @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId])
+}
+
+model EventRegistration {
+  id String @id @default(cuid())
+
+  userId  String
+  eventId String
+
+  createdAt DateTime @default(now())
+
+  user  CbcUser @relation(fields: [userId], references: [id])
+  event Event   @relation(fields: [eventId], references: [id])
+
+  @@unique([userId, eventId])
+}
+
+model Notification {
+  id String @id @default(cuid())
+
+  userId String
+  user   CbcUser @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  emoji     String?
+  textKey   String
+  params    Json?
+  status    String?
+  type      String?
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Availability {
+  id String @id @default(cuid())
+
+  userId String
+  user   CbcUser @relation(fields: [userId], references: [id])
+
+  start DateTime
+  end   DateTime
+
+  createdAt DateTime @default(now())
+}
+
+model MeetingSlot {
+  id String @id @default(cuid())
+
+  hostId String
+  host   CbcUser @relation("HostSlots", fields: [hostId], references: [id])
+
+  start DateTime
+  end   DateTime
+
+  meeting Meeting?
+
+  createdAt DateTime @default(now())
+}
+
+model Meeting {
+  id String @id @default(cuid())
+
+  hostId String
+  host   CbcUser @relation("MeetingHost", fields: [hostId], references: [id])
+
+  clientId String
+  client   CbcUser @relation("MeetingClient", fields: [clientId], references: [id])
+
+  slotId String      @unique
+  slot   MeetingSlot @relation(fields: [slotId], references: [id])
+
+  createdAt DateTime @default(now())
 }
