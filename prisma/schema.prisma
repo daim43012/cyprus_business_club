@@ -192,9 +192,12 @@ model KrasavaUsers {
   googleId  String?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  bcgameid  String?  @unique
 
   purchaseHistory PurchaseHistory[]
   wishlist        Wishlist[]
+  predictions     Prediction[]
+  userScores      UserScore[]
 }
 
 model Player {
@@ -227,6 +230,7 @@ model Product {
   price       Float
   imageUrl    String?
   createdAt   DateTime @default(now())
+  isActive    Boolean  @default(true)
 
   purchases    PurchaseHistory[]
   wishlisted   Wishlist[]
@@ -278,37 +282,49 @@ model CbcUser {
   updatedAt  DateTime  @updatedAt
   lastOnline DateTime?
 
-  infoId String?      @unique
-  info       CbcUserInfo?  @relation("UserInfoRelation", fields: [infoId], references: [id])
+  referralId   String?   @unique
+  invitedById  String?
+  invitedBy    CbcUser?  @relation("UserInvites", fields: [invitedById], references: [id])
+  invitedUsers CbcUser[] @relation("UserInvites")
 
-  settings  CbcUserSetting?
-  events    Event[]         @relation("UserEvents")
-  followers CbcFollow[]     @relation("FollowingRelation")
-  following CbcFollow[]     @relation("FollowerRelation")
-  messages         Message[]         @relation("UserMessages")
-  chatParticipants ChatParticipant[]
-  messageReads  MessageRead[]
-  registrations EventRegistration[]
-  notifications Notification[]      @relation("UserNotifications")
-  availability  Availability[]
-  meetingSlots MeetingSlot[] @relation("HostSlots")
-  hostMeetings Meeting[] @relation("MeetingHost")
-  clientMeetings Meeting[] @relation("MeetingClient")
+  infoId String?      @unique
+  info   CbcUserInfo? @relation("UserInfoRelation", fields: [infoId], references: [id])
+
+  settings              CbcUserSetting?
+  events                Event[]                @relation("UserEvents")
+  followers             CbcFollow[]            @relation("FollowingRelation")
+  following             CbcFollow[]            @relation("FollowerRelation")
+  messages              Message[]              @relation("UserMessages")
+  chatParticipants      ChatParticipant[]
+  messageReads          MessageRead[]
+  registrations         EventRegistration[]
+  notifications         Notification[]         @relation("UserNotifications")
+  availability          Availability[]
+  meetingSlots          MeetingSlot[]          @relation("HostSlots")
+  hostMeetings          Meeting[]              @relation("MeetingHost")
+  clientMeetings        Meeting[]              @relation("MeetingClient")
+  achievements          UserAchievement[]
+  brands                Brand[]                @relation("UserBrands")
+  interests             EventCategory[]        @relation("UserInterests")
+  transactions          CbcTransaction[]
+  ownedCommunities      Community[]            @relation("CommunityOwners")
+  memberCommunities     Community[]            @relation("CommunityMembers")
+  communityJoinRequests CommunityJoinRequest[]
 }
 
 model CbcUserInfo {
-  id          String     @id @default(cuid())
-  user        CbcUser?   @relation("UserInfoRelation")
+  id   String   @id @default(cuid())
+  user CbcUser? @relation("UserInfoRelation")
 
-  status      String     @default("Member")
-  bio         String?
-  photo       String?
-  dateOfBirth DateTime?
-  name        String?
-  location    String?
-  phoneNumber String?
+  status         String    @default("Member")
+  bio            String?
+  photo          String?
+  dateOfBirth    DateTime?
+  name           String?
+  location       String?
+  phoneNumber    String?
+  custodyAddress String?   @unique
 }
-
 
 model CbcUserSetting {
   id          String  @id @default(cuid())
@@ -330,6 +346,9 @@ model Event {
   documentPath String?
   latitude     Float?
   longitude    Float?
+  agenda       Json?
+  chatId       String?  @unique
+  chat         Chat?    @relation(fields: [chatId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -340,9 +359,11 @@ model Event {
 }
 
 model EventCategory {
-  id     String  @id @default(cuid())
-  name   String  @unique
-  events Event[] @relation("EventCategories")
+  id     String    @id @default(cuid())
+  name   String    @unique
+  events Event[]   @relation("EventCategories")
+  brands Brand[]   @relation("BrandCategories")
+  users  CbcUser[] @relation("UserInterests")
 }
 
 model CbcFollow {
@@ -365,6 +386,7 @@ model Chat {
 
   participants ChatParticipant[]
   messages     Message[]
+  event        Event?
 }
 
 model ChatParticipant {
@@ -385,6 +407,7 @@ model Message {
   senderId  String
   content   String
   createdAt DateTime @default(now())
+  type      String   @default("text")
 
   chat   Chat    @relation(fields: [chatId], references: [id])
   sender CbcUser @relation("UserMessages", fields: [senderId], references: [id])
@@ -412,8 +435,10 @@ model EventRegistration {
 
   createdAt DateTime @default(now())
 
-  user  CbcUser @relation(fields: [userId], references: [id])
-  event Event   @relation(fields: [eventId], references: [id])
+  user          CbcUser         @relation(fields: [userId], references: [id])
+  event         Event           @relation(fields: [eventId], references: [id])
+  transactionId String?         @unique
+  transaction   CbcTransaction? @relation("RegTransaction", fields: [transactionId], references: [id])
 
   @@unique([userId, eventId])
 }
@@ -473,4 +498,275 @@ model Meeting {
   slot   MeetingSlot @relation(fields: [slotId], references: [id])
 
   createdAt DateTime @default(now())
+}
+
+model Episode {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  videoUrl    String?
+  publishDate DateTime
+  isActive    Boolean  @default(true)
+
+  teams       Team[]
+  questions   Question[]
+  predictions Prediction[]
+  result      EpisodeResult?
+  scores      UserScore[]
+  createdAt   DateTime       @default(now())
+}
+
+model Team {
+  id        String  @id @default(cuid())
+  episodeId String
+  name      String
+  players   Json
+  episode   Episode @relation(fields: [episodeId], references: [id])
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  SCORE
+}
+
+model Question {
+  id        String       @id @default(cuid())
+  episodeId String
+  text      String
+  type      QuestionType
+  options   Json
+  points    Json
+  order     Int?
+  createdAt DateTime     @default(now())
+
+  episode Episode @relation(fields: [episodeId], references: [id])
+}
+
+model Prediction {
+  id        String   @id @default(cuid())
+  userId    String
+  episodeId String
+  answers   Json
+  createdAt DateTime @default(now())
+  isCounted Boolean  @default(false)
+
+  user    KrasavaUsers @relation(fields: [userId], references: [id])
+  episode Episode      @relation(fields: [episodeId], references: [id])
+
+  @@unique([userId, episodeId])
+}
+
+model EpisodeResult {
+  id        String  @id @default(cuid())
+  episodeId String  @unique
+  correct   Json
+  episode   Episode @relation(fields: [episodeId], references: [id])
+}
+
+model UserScore {
+  id        String       @id @default(cuid())
+  userId    String
+  episodeId String
+  points    Int
+  user      KrasavaUsers @relation(fields: [userId], references: [id])
+  episode   Episode      @relation(fields: [episodeId], references: [id])
+
+  @@unique([userId, episodeId])
+}
+
+model Achievement {
+  id          String          @id @default(uuid())
+  code        String          @unique
+  title       String
+  description String
+  iconUrl     String?
+  kind        AchievementKind @default(PROGRESS)
+  tier        Tier?
+  isActive    Boolean         @default(true)
+  requirement String?
+  levelsJson  Json?
+
+  startsAt DateTime?
+  endsAt   DateTime?
+
+  userAchievements UserAchievement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind])
+}
+
+model UserAchievement {
+  id            String   @id @default(uuid())
+  userId        String
+  achievementId String
+  level         Int      @default(1)
+  earnedAt      DateTime @default(now())
+
+  user        CbcUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId, level])
+  @@index([userId, achievementId])
+  @@index([achievementId, level])
+  @@index([userId])
+}
+
+enum AchievementKind {
+  ONE_OFF
+  PROGRESS
+  SEASONAL
+}
+
+enum Tier {
+  Common
+  Rare
+  Epic
+  Legendary
+  Mythic
+}
+
+enum RequestStatus {
+  DISABLED
+  PENDING
+  ACTIVE
+}
+
+enum BrandType {
+  PERSONAL
+  COMPANY
+}
+
+model Brand {
+  id         String            @id @default(cuid())
+  ownerId    String
+  owner      CbcUser           @relation("UserBrands", fields: [ownerId], references: [id])
+  status     RequestStatus     @default(PENDING)
+  type       BrandType         @default(COMPANY)
+  name       String
+  logoUrl    String?
+  website    String?
+  answers    Json
+  categories EventCategory[]   @relation("BrandCategories")
+  tags       BrandTagOnBrand[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([type])
+}
+
+enum BrandTagType {
+  AUDIENCE
+  PAIN
+  SOLUTION
+  MONETIZATION
+  CLIENT
+}
+
+model BrandTag {
+  id       String       @id @default(cuid())
+  type     BrandTagType
+  title    String
+  isActive Boolean      @default(true)
+
+  brands BrandTagOnBrand[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, title])
+  @@index([type])
+}
+
+model BrandTagOnBrand {
+  brandId String
+  tagId   String
+
+  brand Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  tag   BrandTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([brandId, tagId])
+  @@index([tagId])
+}
+
+model CbcTransaction {
+  id String @id @default(cuid())
+
+  userId String
+  user   CbcUser @relation(fields: [userId], references: [id])
+
+  type CbcTransactionType @default(EVENT_REGISTRATION)
+
+  provider CbcPaymentProvider
+  status   CbcTransactionStatus @default(CREATED)
+
+  amount            Float
+  currency          String  @default("EUR")
+  providerPaymentId String?
+
+  rawDetails        Json?
+  eventRegistration EventRegistration? @relation("RegTransaction")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([provider, providerPaymentId])
+}
+
+enum CbcPaymentProvider {
+  PAYPAL
+  STRIPE
+  CRYPTO
+}
+
+enum CbcTransactionStatus {
+  CREATED
+  PENDING_CONFIRMATION
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum CbcTransactionType {
+  EVENT_REGISTRATION
+}
+
+model Community {
+  id        String  @id @default(cuid())
+  name      String
+  logoUrl   String?
+  isPrivate Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owners CbcUser[] @relation("CommunityOwners")
+
+  members CbcUser[] @relation("CommunityMembers")
+
+  joinRequests CommunityJoinRequest[]
+
+  @@unique([name])
+  @@index([isPrivate])
+}
+
+model CommunityJoinRequest {
+  id          String   @id @default(cuid())
+  communityId String
+  userId      String
+  message     String?
+  createdAt   DateTime @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      CbcUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+  @@index([communityId])
+  @@index([userId])
 }
