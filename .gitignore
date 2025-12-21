@@ -1,4 +1,6 @@
 node_modules
+prisma/migrations/
+prisma/migrations1/
 
 # Output
 .output
