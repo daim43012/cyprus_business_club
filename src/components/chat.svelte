@@ -2,8 +2,12 @@
   import { onMount, onDestroy, tick } from "svelte";
   import { goto } from "$app/navigation";
   import { onlineStatus } from "$lib/utils/onlineStatus";
+  import TransferMessage from "./chat/TransferMessage.svelte";
 
   export let chatId: string | null = null;
+
+  type ChatTab = "dm" | "event";
+  let activeTab: ChatTab = "dm";
 
   let chats: any[] = [];
   let selectedChat: any = null;
@@ -26,19 +30,30 @@
   let statusInterval: any = null;
   let selectedFile: File | null = null;
 
-  function handleFile(event: any) {
-    const file = event.target.files[0];
-    if (!file) return;
+  // ---------- helpers: type guards ----------
+  function isEventChat(chat: any) {
+    return !!chat?.event;
+  }
 
+  // derived lists for tabs
+  $: dmChats = chats.filter((c) => !isEventChat(c));
+  $: eventChats = chats.filter((c) => isEventChat(c));
+  $: visibleChats = activeTab === "dm" ? dmChats : eventChats;
+
+  // ---------- upload ----------
+  function handleFile(event: any) {
+    const file = event.target.files?.[0];
+    if (!file) return;
     selectedFile = file;
   }
 
   function autoResize(e: any) {
-    const el = e.target;
+    const el = e.target as HTMLTextAreaElement;
     el.style.height = "auto";
     el.style.height = el.scrollHeight + "px";
   }
 
+  // ---------- scroll ----------
   function scrollToBottom() {
     if (messagesContainer) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -64,22 +79,81 @@
 
     userScrolledUp = distanceFromBottom > threshold;
   }
+
+  // ---------- navigation ----------
+  function openMember(userId: string) {
+    goto(`/members/${userId}`);
+  }
+
+  // ---------- message content helpers ----------
   function isImage(msg: any) {
     if (typeof msg.content !== "string") return false;
-
     const ext = msg.content.toLowerCase().split(".").pop();
-    return ["png", "jpg", "jpeg", "gif", "webp"].includes(ext);
+    return ["png", "jpg", "jpeg", "gif", "webp"].includes(ext ?? "");
   }
+
   function isFile(msg: any) {
     if (typeof msg.content !== "string") return false;
-
     if (!msg.content.startsWith("/uploads/")) return false;
-
     if (isImage(msg)) return false;
-
     return true;
   }
 
+  // ---------- avatars + titles ----------
+  function getUserAvatar(user: any) {
+    const photo = user?.info?.photo;
+    const name = user?.info?.name || user?.email || "User";
+
+    if (photo) {
+      return `/api/photo/${String(photo).split("/").pop()}`;
+    }
+
+    return (
+      "https://api.dicebear.com/7.x/initials/svg?seed=" +
+      encodeURIComponent(name)
+    );
+  }
+
+  function getEventAvatar(event: any) {
+    const photo = event?.photo;
+    const title = event?.title || "Event";
+
+    if (photo) {
+      return `/api/photo/${String(photo).split("/").pop()}`;
+    }
+
+    return (
+      "https://api.dicebear.com/7.x/initials/svg?seed=" +
+      encodeURIComponent(title)
+    );
+  }
+
+  function getMessageAvatar(msg: any) {
+    return getUserAvatar(msg?.sender);
+  }
+
+  function getChatTitle(chat: any) {
+    // ✅ event chat
+    if (chat?.event?.title) return chat.event.title;
+
+    // ✅ dm chat
+    if (chat?.otherUser?.info?.name) return chat.otherUser.info.name;
+    if (chat?.otherUser?.email) return chat.otherUser.email;
+
+    return "Chat";
+  }
+
+  function getChatPreview(chat: any) {
+    return chat?.lastMessage || "Нет сообщений";
+  }
+
+  function getChatAvatar(chat: any) {
+    if (chat?.event) return getEventAvatar(chat.event);
+    if (chat?.otherUser) return getUserAvatar(chat.otherUser);
+    return "https://api.dicebear.com/7.x/initials/svg?seed=Chat";
+  }
+
+  // ---------- data loading ----------
   async function loadChats() {
     const res = await fetch("/api/chat");
     if (!res.ok) return;
@@ -95,8 +169,11 @@
 
     if (pollingTimer) clearTimeout(pollingTimer);
 
-    if (selectedChat?.otherUser?.lastOnline) {
+    // ✅ статус показываем только для личек
+    if (!isEventChat(selectedChat) && selectedChat?.otherUser?.lastOnline) {
       status = onlineStatus(selectedChat.otherUser.lastOnline);
+    } else {
+      status = "";
     }
 
     if (statusInterval) clearInterval(statusInterval);
@@ -107,12 +184,13 @@
       await loadChats();
 
       const updated = chats.find((c) => c.id === selectedChat.id);
-
       if (updated) {
         selectedChat = updated;
 
-        if (selectedChat.otherUser?.lastOnline) {
+        if (!isEventChat(selectedChat) && selectedChat.otherUser?.lastOnline) {
           status = onlineStatus(selectedChat.otherUser.lastOnline);
+        } else {
+          status = "";
         }
       }
     }, 3000);
@@ -145,7 +223,7 @@
 
     const data = await res.json();
 
-    if (data.messages.length > 0) {
+    if (data.messages?.length > 0) {
       messages = [...messages, ...data.messages];
       lastTimestamp = data.messages[data.messages.length - 1].createdAt;
 
@@ -169,39 +247,34 @@
     }
 
     loadChats();
-
     pollingTimer = setTimeout(loadMessages, 1000);
   }
 
   async function sendMessage(content: string) {
     if ((!content.trim() && !selectedFile) || !selectedChat) return;
 
-    const chatId = selectedChat.id;
+    const chatIdLocal = selectedChat.id;
 
-    // --- Формируем FormData ---
     const form = new FormData();
     if (content.trim()) form.append("content", content);
     if (selectedFile) form.append("file", selectedFile);
 
-    await fetch(`/api/chat/${chatId}/send`, {
+    await fetch(`/api/chat/${chatIdLocal}/send`, {
       method: "POST",
       body: form,
     });
 
-    // очистка
     inputText = "";
     selectedFile = null;
 
     await tick();
 
-    // сброс textarea
     const textarea = document.querySelector(
       ".input-area textarea"
     ) as HTMLTextAreaElement;
     if (textarea) textarea.style.height = "34px";
 
-    // если всё ещё в этом чате
-    if (!selectedChat || selectedChat.id !== chatId) return;
+    if (!selectedChat || selectedChat.id !== chatIdLocal) return;
 
     userScrolledUp = false;
     forceScrollToBottom = true;
@@ -213,19 +286,33 @@
     sendMessage(inputText);
   }
 
-  onMount(async () => {
-    await loadChats();
+  // ---------- mount ----------
+  onMount(() => {
+    const updateMobile = () => (isMobile = window.innerWidth < 768);
+    updateMobile();
+    window.addEventListener("resize", updateMobile);
 
-    if (chatId) {
-      const target = chats.find((c) => c.id == chatId);
-      if (target) {
-        openChat(target);
+    (async () => {
+      await loadChats();
+
+      // если chatId пришёл в props — открываем его
+      if (chatId) {
+        const target = chats.find((c) => c.id == chatId);
+        if (target) {
+          // ✅ если открываем ивент-чат — сразу переключаем вкладку
+          activeTab = isEventChat(target) ? "event" : "dm";
+          await openChat(target);
+          return;
+        }
       }
-    }
-    isMobile = window.innerWidth < 768;
-    window.addEventListener("resize", () => {
-      isMobile = window.innerWidth < 768;
-    });
+
+      // ✅ иначе: если есть ивенты — показываем лички по умолчанию, но это можно поменять
+      activeTab = "dm";
+    })();
+
+    return () => {
+      window.removeEventListener("resize", updateMobile);
+    };
   });
 
   onDestroy(() => {
@@ -239,19 +326,49 @@
   <aside class="sidebar {isMobile && selectedChat ? 'hidden' : ''}">
     <h3 class="sidebar-title">Сообщения</h3>
 
+    <!-- TABS: Личные / Ивенты -->
+    <div class="sidebar-tabs">
+      <button
+        class="sidebar-tab"
+        class:active={activeTab === "dm"}
+        on:click={() => (activeTab = "dm")}
+      >
+        Личные
+      </button>
+
+      <button
+        class="sidebar-tab"
+        class:active={activeTab === "event"}
+        on:click={() => (activeTab = "event")}
+      >
+        Ивенты
+      </button>
+    </div>
+
     <div class="chat-list">
-      {#each chats as chat}
+      {#each visibleChats as chat}
         <div
           class="chat-list-item {selectedChat?.id === chat.id ? 'active' : ''}"
           on:click={() => openChat(chat)}
         >
+          <!-- avatar (event/user) -->
+          <img class="chat-avatar" src={getChatAvatar(chat)} alt="avatar" />
+
           <div class="chat-info">
-            <div class="chat-name">
-              {chat.otherUser?.info?.name || chat.otherUser?.email}
-            </div>
-            <div class="chat-preview">
-              {chat.lastMessage || "Нет сообщений"}
-            </div>
+            <div class="chat-name">{getChatTitle(chat)}</div>
+
+            {#if chat.event?.date}
+              <!-- optional: дата ивента маленькой строкой -->
+              <div class="chat-meta">
+                {new Date(chat.event.date).toLocaleDateString("ru-RU", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </div>
+            {/if}
+
+            <div class="chat-preview">{getChatPreview(chat)}</div>
           </div>
 
           {#if chat.unreadCount > 0}
@@ -259,6 +376,12 @@
           {/if}
         </div>
       {/each}
+
+      {#if visibleChats.length === 0}
+        <div class="chat-empty">
+          {activeTab === "dm" ? "Нет личных чатов" : "Нет чатов ивентов"}
+        </div>
+      {/if}
     </div>
   </aside>
 
@@ -272,23 +395,27 @@
           </button>
         {/if}
 
+        <!-- header avatar: event/user -->
         <img
-          src={selectedChat.otherUser?.info?.photo ||
-            "https://api.dicebear.com/7.x/initials/svg?seed=" +
-              (selectedChat.otherUser?.info?.name || "User")}
-          alt="User"
+          src={getChatAvatar(selectedChat)}
+          alt="Avatar"
           class="avatar-img"
         />
 
         <div class="header-info">
-          <div class="header-name">
-            {selectedChat.otherUser?.info?.name ||
-              selectedChat.otherUser?.email}
-          </div>
+          <div class="header-name">{getChatTitle(selectedChat)}</div>
 
-          <div class="header-status">
-            {status}
-          </div>
+          {#if selectedChat.event?.date}
+            <div class="header-status">
+              {new Date(selectedChat.event.date).toLocaleDateString("ru-RU", {
+                weekday: "short",
+                day: "2-digit",
+                month: "short",
+              })}
+            </div>
+          {:else if status}
+            <div class="header-status">{status}</div>
+          {/if}
         </div>
       </div>
 
@@ -298,49 +425,79 @@
         on:scroll={handleScroll}
       >
         {#each messages as msg}
-          <div class="msg-row {msg.isMine ? 'mine' : ''}">
-            <div class="msg-bubble">
-              {#if isImage(msg)}
-                <div class="img-wrapper">
-                  <img
-                    src={`/api/photo/${msg.content.split("/").pop()}`}
-                    alt="image"
-                    class="msg-image"
-                  />
-
-                  <div class="msg-footer">
-                    <a href={msg.content} download class="download-inline">
-                      Скачать
-                    </a>
-                  </div>
-                </div>
-              {:else if isFile(msg)}
-                <a class="msg-file" href={msg.content} download>
-                  <ion-icon name="document-outline"></ion-icon>
-                  <span>{msg.content.split("/").pop()}</span>
-                </a>
-              {:else}
-                <span>{msg.content}</span>
+          {#if msg.type === "transfer"}
+            <TransferMessage {msg} />
+          {:else}
+            <div class="msg-row {msg.isMine ? 'mine' : 'their'}">
+              {#if !msg.isMine}
+                <img
+                  class="msg-avatar clickable"
+                  src={getMessageAvatar(msg)}
+                  alt="avatar"
+                  on:click={() => openMember(msg.sender.id)}
+                />
               {/if}
 
-              <div class="msg-time">
-                {new Date(msg.createdAt).toLocaleTimeString("ru-RU", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+              <div class="msg-bubble">
+                {#if !msg.isMine && msg.sender?.info?.name}
+                  <div
+                    class="msg-sender"
+                    on:click={() => openMember(msg.sender.id)}
+                  >
+                    {msg.sender.info.name}
+                  </div>
+                {/if}
+
+                {#if isImage(msg)}
+                  <div class="img-wrapper">
+                    <img
+                      src={`/api/photo/${msg.content.split("/").pop()}`}
+                      alt="image"
+                      class="msg-image"
+                    />
+                    <div class="msg-footer">
+                      <a href={msg.content} download class="download-inline">
+                        Скачать
+                      </a>
+                    </div>
+                  </div>
+                {:else if isFile(msg)}
+                  <a class="msg-file" href={msg.content} download>
+                    <ion-icon name="document-outline"></ion-icon>
+                    <span>{msg.content.split("/").pop()}</span>
+                  </a>
+                {:else}
+                  <span>{msg.content}</span>
+                {/if}
+
+                <div class="msg-time">
+                  {new Date(msg.createdAt).toLocaleTimeString("ru-RU", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
               </div>
+
+              {#if msg.isMine}
+                <img
+                  class="msg-avatar"
+                  src={getMessageAvatar(msg)}
+                  alt="avatar"
+                />
+              {/if}
             </div>
-          </div>
+          {/if}
         {/each}
       </div>
+
       <div class="input-area">
-        <!-- скрытый file input -->
         <input
           type="file"
           bind:this={fileInput}
           on:change={handleFile}
           style="display:none;"
         />
+
         <button class="attach-btn" on:click={() => fileInput?.click()}>
           <ion-icon name="document-attach-outline"></ion-icon>
         </button>
@@ -352,35 +509,39 @@
           on:input={autoResize}
         />
 
-        <button on:click={submit}>➤</button>
+        <button class="send-btn" on:click={submit}>➤</button>
       </div>
 
       {#if selectedFile}
         <div class="file-chip">
           {selectedFile.name}
-          <span class="remove-file" on:click={() => (selectedFile = null)}
-            >✖</span
-          >
+          <span class="remove-file" on:click={() => (selectedFile = null)}>
+            ✖
+          </span>
         </div>
       {/if}
     {:else}
-      <div class="chat-placeholder">Выберите чат</div>
+      <div class="chat-placeholder">Choose chat</div>
     {/if}
   </main>
 </div>
 
 <style>
   .chat-wrapper {
+    position: absolute; /* было flex/height — меняем */
+    inset: 0;
     display: flex;
-    height: 100dvh;
+    min-height: 420px;
     max-width: 1100px;
     width: 100%;
     margin: 0 auto;
+
     background: linear-gradient(180deg, #cdd5ff 0%, #7a88f0 100%);
     box-shadow: 0 0 25px rgba(0, 0, 0, 0.1);
     overflow: hidden;
   }
 
+  /* ===== Buttons / Upload ===== */
   .attach-btn {
     width: 34px;
     height: 34px;
@@ -428,6 +589,7 @@
     opacity: 1;
   }
 
+  /* ===== Message content ===== */
   .img-wrapper {
     display: flex;
     flex-direction: column;
@@ -439,6 +601,28 @@
     max-width: 230px;
     border-radius: 12px;
     object-fit: cover;
+  }
+
+  .msg-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 1px solid #e2e8f0;
+    flex: 0 0 auto;
+    margin-bottom: 2px;
+  }
+
+  .msg-avatar.clickable {
+    cursor: pointer;
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  .msg-avatar.clickable:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 2px #c7d2fe;
   }
 
   /* Линия внизу: дата + скачать */
@@ -479,11 +663,26 @@
     font-size: 22px;
   }
 
+  .msg-sender {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4f46e5;
+    margin-bottom: 4px;
+    cursor: pointer;
+  }
+
+  .msg-sender:hover {
+    text-decoration: underline;
+  }
+
+  /* ===== Sidebar ===== */
   .sidebar {
     width: 310px;
     background: rgba(255, 255, 255, 0.35);
     backdrop-filter: blur(10px);
     padding: 12px 0;
+    height: 100%; /* занимает всю высоту chat-wrapper */
+    min-height: 0;
     display: flex;
     flex-direction: column;
     border-right: 1px solid rgba(255, 255, 255, 0.25);
@@ -492,23 +691,54 @@
   .sidebar-title {
     font-size: 19px;
     font-weight: 700;
-    padding: 0 20px 12px;
+    padding: 0 20px 10px;
     color: #2d2d2d;
+  }
+
+  /* Tabs: Личные / Ивенты */
+  .sidebar-tabs {
+    display: flex;
+    gap: 10px;
+    padding: 0 20px 12px;
+  }
+
+  .sidebar-tab {
+    flex: 1;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.25);
+    color: #111;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.15s;
+  }
+
+  .sidebar-tab:hover {
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  .sidebar-tab.active {
+    background: rgba(255, 255, 255, 0.6);
+    border-color: rgba(99, 102, 241, 0.8);
   }
 
   .chat-list {
     flex: 1;
+    min-height: 0; /* ✅ добавить */
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .chat-list-item {
-    padding: 14px 20px;
+    padding: 12px 20px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 12px;
 
-    border-radius: 0; /* как Telegram */
+    border-radius: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.25);
 
     background: transparent;
@@ -524,37 +754,71 @@
     border-left: 4px solid #6366f1;
   }
 
+  .chat-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    flex: 0 0 auto;
+  }
+
   .chat-info {
     display: flex;
     flex-direction: column;
     gap: 3px;
+    min-width: 0; /* важно для ellipsis */
+    flex: 1;
   }
 
   .chat-name {
     font-weight: 600;
     font-size: 15px;
     color: #1a1a1a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chat-meta {
+    font-size: 11px;
+    opacity: 0.6;
+    margin-top: -2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .chat-preview {
     font-size: 13px;
     color: #444;
     opacity: 0.7;
-    max-width: 180px;
+
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 100%;
+    display: block;
   }
 
   .chat-unread {
-    background: #6366f1;
+    background: #ef4444;
     color: white;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     padding: 2px 6px;
-    border-radius: 20px;
+    border-radius: 12px;
+    margin-left: auto;
+    flex: 0 0 auto;
   }
 
+  .chat-empty {
+    padding: 16px 20px;
+    opacity: 0.7;
+    font-size: 13px;
+  }
+
+  /* ===== Chat header ===== */
   .chat-header {
     display: flex;
     align-items: center;
@@ -581,53 +845,29 @@
     display: flex;
     flex-direction: column;
     line-height: 1.2;
+    min-width: 0;
   }
 
   .header-name {
     font-size: 17px;
     font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .header-status {
     font-size: 10px;
     margin-top: 2px;
+    opacity: 0.85;
   }
 
-  .chat-list-item.active {
-    border-width: 2px;
-    background: #eef2ff;
-  }
-
-  .chat-unread {
-    background: #ef4444;
-    color: white;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 12px;
-    margin-left: auto;
-  }
-
-  .chat-name {
-    font-weight: 600;
-    font-size: 15px;
-  }
-
-  .chat-preview {
-    font-size: 13px;
-    opacity: 0.6;
-
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 180px;
-    display: block;
-  }
-
+  /* ===== Chat view ===== */
   .chat-view {
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-height: 0; /* важно */
   }
 
   .chat-placeholder {
@@ -647,7 +887,9 @@
 
   .msg-row {
     display: flex;
-    max-width: 70%;
+    align-items: flex-end;
+    gap: 14px; /* ✅ чуть больше воздуха между аватаром и bubble */
+    margin: 2px 0;
   }
 
   .msg-row.mine {
@@ -657,7 +899,6 @@
 
   .msg-bubble {
     position: relative;
-
     display: inline-flex;
     flex-direction: column;
 
@@ -693,14 +934,20 @@
     opacity: 0.6;
   }
 
+  /* ===== Input ===== */
   .input-area {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+
     border-top: 1px solid var(--border-color, #ddd);
+    background: #fafafa;
+
     padding: 8px 12px;
     display: flex;
     gap: 10px;
-    background: #fafafa;
     align-items: center;
-    border-radius: 10px;
+    border-radius: 0;
   }
 
   .input-area textarea {
@@ -747,32 +994,44 @@
   .input-area button:active {
     transform: scale(0.96);
   }
+
   @media (max-width: 768px) {
     .chat-wrapper {
+      position: absolute; /* важно: всё равно экран внутри main */
+      inset: 0;
       flex-direction: column;
-      height: 100vh;
       max-width: 100%;
+      margin: 0;
       border: none;
       overflow: hidden;
+      min-height: 420px;
     }
 
-    /* --- SIDEBAR НА МОБИЛЬНОМ --- */
     .sidebar {
-      display: block;
+      display: flex;
+      flex-direction: column; /* ✅ */
       width: 100%;
       border: none;
       border-bottom: 1px solid #ddd;
       padding: 12px 14px;
-      overflow-y: auto;
-      max-height: 100vh;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
     }
 
-    /* если выбран чат — скрываем список */
+    .chat-list {
+      flex: 1;
+      min-height: 0; /* ✅ добавить */
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
     .sidebar.hidden {
       display: none;
     }
 
-    /* --- КНОПКА НАЗАД --- */
+    /* BACK */
     .back-btn {
       background: transparent;
       border: none;
@@ -782,31 +1041,55 @@
       color: rgb(0, 0, 0);
     }
 
-    /* --- CHAT VIEW --- */
     .chat-view {
-      width: 100%;
       flex: 1;
       display: flex;
       flex-direction: column;
-      height: calc(100vh - 60px);
+
+      height: 100%; /* ✅ важно */
+      min-height: 0; /* ✅ важно */
+      overflow: hidden; /* ✅ чтобы страница/контейнер не скроллился */
     }
 
-    /* сообщения растягиваются */
     .messages {
-      padding: 14px;
       flex: 1;
-      overflow-y: auto;
+      min-height: 0; /* ✅ must-have для scroll внутри flex */
+      overflow-y: auto; /* ✅ скролл только тут */
+
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
     }
 
-    /* input area */
     .input-area {
-      padding: 10px;
-      border-radius: 0;
+      flex: 0 0 auto; /* ✅ не растягивается */
+      position: relative; /* ✅ никакого sticky */
+
+      border-top: 1px solid var(--border-color, #ddd);
+      background: #fafafa;
+
+      padding: 8px 12px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      z-index: 5;
     }
 
     .input-area textarea {
       font-size: 14px;
       min-height: 32px;
+    }
+
+    .sidebar-tabs {
+      padding: 0 0 12px;
+    }
+
+    .chat-list-item {
+      padding: 12px 0;
     }
   }
 </style>
