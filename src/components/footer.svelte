@@ -24,7 +24,14 @@
   </div>
 
   <div class="bottom-bar">
-    <p>© 2025 Cyprus Business Club. All rights reserved.</p>
+    <p>© 2025 Cyprus Business Club. All rights reserved.• Designed by
+      <a
+        href="https://keyscalelab.com/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        KeyScaleLab
+      </a></p>
   </div>
 </footer>
 
@@ -33,7 +40,6 @@
     background: #4f69ff;
     color: white;
     padding-top: 2rem;
-    margin-top: 4rem;
   }
 
   .container {
