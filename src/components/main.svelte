@@ -1,6 +1,5 @@
 <script lang="ts">
   import EventsPreview from "./events-preview.svelte";
-  import TestBlender from "./testBlender.svelte";
 </script>
 
 <main class="page">
@@ -310,7 +309,6 @@
     </div>
   </section>
 </main>
-<TestBlender/>
 <style>
   /* ===== typography (your base) ===== */
   h1 {
