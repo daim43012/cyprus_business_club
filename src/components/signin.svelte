@@ -1,13 +1,36 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
+  import { onMount } from "svelte";
 
   let name = "";
   let email = "";
   let password = "";
   let confirmPassword = "";
+  let referral = "";
   let errorMessage = "";
   let successMessage = "";
   let loading = false;
+
+  onMount(() => {
+    const unsub = page.subscribe(async ($page) => {
+      const ref = $page.url.searchParams.get("ref");
+      if (ref) {
+        referral = ref;
+        document.cookie = `ref=${ref}; path=/; max-age=86400`;
+
+        const res = await fetch(`/api/user/referral/check?code=${ref}`);
+        const data = await res.json();
+        if (!data.exists) {
+          errorMessage = "This referral code does not exist.";
+        } else {
+          errorMessage = "";
+        }
+      }
+    });
+
+    return () => unsub();
+  });
 
   const handleSubmit = async () => {
     if (!name || !email || !password || !confirmPassword) {
@@ -28,7 +51,12 @@
       const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          referral,
+        }),
       });
 
       if (res.status === 201) {
@@ -49,8 +77,23 @@
   };
 
   const handleGoogle = () => {
-    window.location.href = "/api/auth/google";
+    const ref = referral || new URL(location.href).searchParams.get("ref");
+    window.location.href = `/api/auth/google${ref ? `?state=${ref}` : ""}`;
   };
+  $: if (referral && referral.length >= 3) {
+    checkReferral(referral);
+  }
+
+  async function checkReferral(code: string) {
+    const res = await fetch(`/api/user/referral/check?code=${code}`);
+    const data = await res.json();
+
+    if (!data.exists) {
+      errorMessage = "Referral code not found";
+    } else {
+      errorMessage = "";
+    }
+  }
 </script>
 
 <div class="auth-container">
@@ -107,7 +150,10 @@
           required
         />
       </div>
-
+      <label for="referral">Referral code (optional)</label>
+      <div class="input-group">
+        <input id="referral" type="text" bind:value={referral} maxlength="6" />
+      </div>
       {#if errorMessage}
         <p class="error-message">{errorMessage}</p>
       {/if}
@@ -141,6 +187,7 @@
     </p>
   </div>
 </div>
+
 <style>
   /* Контейнер */
   .auth-container {

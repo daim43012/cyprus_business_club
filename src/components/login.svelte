@@ -1,41 +1,55 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto } from "$app/navigation";
 
-  let email = '';
-  let password = '';
-  let errorMessage = '';
+  let email = "";
+  let password = "";
+  let errorMessage = "";
   let loading = false;
 
-  // --- вход через email / password ---
   const handleSubmit = async () => {
     if (!email || !password) {
-      errorMessage = 'Please fill in all fields';
+      errorMessage = "Please fill in all fields";
       return;
     }
 
     try {
       loading = true;
-      errorMessage = '';
+      errorMessage = "";
 
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        console.log('✅ Logged in:', data.user);
+        console.log("✅ Logged in:", data.user);
 
-        // редирект на главную (или профиль)
-        goto('/');
+        // -----------------------------
+        //  ЧИТАЕМ redirectAfterLogin
+        // -----------------------------
+        const cookies = document.cookie.split(";").map((c) => c.trim());
+        const redirectCookie = cookies.find((c) =>
+          c.startsWith("redirectAfterLogin=")
+        );
+
+        let redirectTo = "/profile";
+
+        if (redirectCookie) {
+          redirectTo = redirectCookie.split("=")[1] || "/profile";
+
+          document.cookie = "redirectAfterLogin=; path=/; max-age=0";
+        }
+
+        goto(redirectTo);
       } else {
         const text = await res.text();
-        errorMessage = text || 'Login failed. Please try again.';
+        errorMessage = text || "Login failed. Please try again.";
       }
     } catch (err) {
-      console.error('Login error:', err);
-      errorMessage = 'Something went wrong.';
+      console.error("Login error:", err);
+      errorMessage = "Something went wrong.";
     } finally {
       loading = false;
     }
@@ -44,9 +58,9 @@
   // --- вход через Google OAuth ---
   const handleGoogle = async () => {
     try {
-      window.location.href = '/api/auth/google';
+      window.location.href = "/api/auth/google";
     } catch (err) {
-      console.error('Google login error:', err);
+      console.error("Google login error:", err);
     }
   };
 </script>
@@ -121,7 +135,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    flex: 1; 
+    flex: 1;
     min-height: 100vh;
   }
 

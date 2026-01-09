@@ -2,8 +2,10 @@
   import { timeAgo } from "$lib/utils/timeAgo";
   import { onMount } from "svelte";
   import BookingModal from "./bookingModal.svelte";
+  import ContextAssistant from "./ContextAssistant.svelte";
+  import { photoSrc } from "$lib/utils/photo";
 
-  export let data;
+  export let data: any;
   const member = data.member;
   const currentUserId = data.currentUserId;
   let availability = data.availability || [];
@@ -21,21 +23,26 @@
   let followersCount = 0;
   let followingCount = 0;
 
-function selectSlot(slot:any, time:any) {
-    console.log("Selected slot:", slot);
+  // ✅ аватар: либо google http(s), либо /api/photo/<file>, либо dicebear
+  const fallback = () =>
+    "https://api.dicebear.com/7.x/initials/svg?seed=" +
+    encodeURIComponent(member?.info?.name || "User");
+
+  $: avatar = photoSrc(member?.info?.photo) ?? fallback();
+
+  function selectSlot(meeting: any) {
+    console.log("Meeting created:", meeting);
     showBooking = false;
   }
-  // Загружаем статус подписки и количество подписчиков
+
   onMount(async () => {
     try {
-      // Проверяем, подписан ли текущий пользователь на этого
       const res = await fetch(`/api/member/follow?userId=${member.id}`);
       if (res.ok) {
         const data = await res.json();
         isFollowing = data.following;
       }
 
-      // Загружаем кол-во подписчиков/подписок
       const res2 = await fetch(`/api/member/followers?userId=${member.id}`);
       if (res2.ok) {
         const data2 = await res2.json();
@@ -59,7 +66,7 @@ function selectSlot(slot:any, time:any) {
 
       if (res.ok) {
         isFollowing = !isFollowing;
-        // 🔄 обновляем количество подписчиков после клика
+
         const res2 = await fetch(`/api/member/followers?userId=${member.id}`);
         if (res2.ok) {
           const data2 = await res2.json();
@@ -77,6 +84,7 @@ function selectSlot(slot:any, time:any) {
       loadingFollow = false;
     }
   }
+
   async function startChat() {
     try {
       const res = await fetch("/api/chat/create", {
@@ -92,9 +100,7 @@ function selectSlot(slot:any, time:any) {
         return;
       }
 
-      const data = await res.json(); // <-- тут chatId
-
-      // Переход в чат
+      const data = await res.json();
       window.location.href = `/chat/${data.chatId}`;
     } catch (err) {
       console.error("Start chat error:", err);
@@ -107,6 +113,11 @@ function selectSlot(slot:any, time:any) {
   }
 </script>
 
+<ContextAssistant
+  contextKey="expert"
+  payload={member}
+  title="Спросить про эксперта"
+/>
 {#if !member}
   <p class="error">Member not found.</p>
 {:else}
@@ -114,13 +125,7 @@ function selectSlot(slot:any, time:any) {
     <!-- Левая колонка -->
     <div class="profile-card">
       <div class="profile-header">
-        <img
-          src={member.info?.photo ||
-            "https://api.dicebear.com/7.x/initials/svg?seed=" +
-              (member.info?.name || "User")}
-          alt="Member photo"
-          class="profile-photo"
-        />
+        <img src={avatar} alt="Member photo" class="profile-photo" />
 
         <div class="user-info">
           <h2>{member.info?.name || "Unnamed member"}</h2>
@@ -285,7 +290,7 @@ function selectSlot(slot:any, time:any) {
     {availability}
     {member}
     onClose={() => (showBooking = false)}
-    onSelect={selectSlot}
+    onBooked={selectSlot}
   />
 {/if}
 
