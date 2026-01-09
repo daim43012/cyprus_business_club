@@ -770,3 +770,166 @@ model CommunityJoinRequest {
   @@index([communityId])
   @@index([userId])
 }
+
+model Post {
+  id   String @id @default(cuid())
+  slug String @unique
+
+  title      String
+  excerpt    String?
+  content    Json
+  eventImage String?
+  speakers   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
+model SmartEvent {
+  id   String @id @default(cuid())
+  slug String @unique
+
+  title   String
+  excerpt String?
+  content Json
+
+  coverImage String?
+  gallery    Json?
+
+  links     Json?
+  eventDate DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventDate])
+  @@index([createdAt])
+}
+
+model SmartComplianceUsers {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  googleId  String?  @unique
+  isAgree   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+}
+
+model Booking {
+  id     String               @id @default(cuid())
+  userId String
+  user   SmartComplianceUsers @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  startAt   DateTime
+  endAt     DateTime
+  createdAt DateTime @default(now())
+
+  meetUrl     String?
+  gcalEventId String?
+
+  @@unique([startAt, endAt])
+  @@index([userId, startAt])
+}
+
+model FlyUsers {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  googleId  String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FlyPost {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  excerpt   String?
+  content   Json
+  image     String?
+  speakers  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
+model SpiritUsers {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  googleId  String?  @unique
+  telegram  String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions SpiritTransaction[]
+}
+
+model TrainingVideo {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  durationSec Int?
+  price       Int      @default(0)
+  fileName    String
+  imageUrl    String
+  materials   Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isActive    Boolean  @default(true)
+
+  @@index([isActive, createdAt])
+}
+
+enum ProductType {
+  TRAINING_VIDEO
+}
+
+model SpiritTransaction {
+  id                String       @id @default(cuid())
+  userId            String
+  user              SpiritUsers  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productType       ProductType?
+  productId         String?
+  price             Int
+  createdAt         DateTime     @default(now())
+  status            String?
+  providerPaymentId String?
+  rawDetails        Json?
+
+  @@index([userId, createdAt])
+  @@index([productType, productId])
+  @@index([providerPaymentId])
+}
+
+enum EventFormat {
+  OFFLINE
+  ONLINE
+}
+
+model SpiritEvent {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  agenda      String?
+  format      EventFormat @default(OFFLINE)
+  location    String
+  startAt     DateTime
+  endAt       DateTime?
+  coverUrl    String?
+  price       Int         @default(0)
+  materials   Json? 
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([isActive, startAt])
+}
