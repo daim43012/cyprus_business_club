@@ -358,9 +358,15 @@ model Event {
   registrations EventRegistration[]
 }
 
+enum ByWho {
+  USER
+  ADMIN
+}
+
 model EventCategory {
   id     String    @id @default(cuid())
   name   String    @unique
+  byWho  ByWho?
   events Event[]   @relation("EventCategories")
   brands Brand[]   @relation("BrandCategories")
   users  CbcUser[] @relation("UserInterests")
@@ -891,6 +897,7 @@ model TrainingVideo {
 
 enum ProductType {
   TRAINING_VIDEO
+  EVENT
 }
 
 model SpiritTransaction {
@@ -926,7 +933,7 @@ model SpiritEvent {
   endAt       DateTime?
   coverUrl    String?
   price       Int         @default(0)
-  materials   Json? 
+  materials   Json?
   isActive    Boolean     @default(true)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
